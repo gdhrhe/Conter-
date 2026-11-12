@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Strike Elo - Игра</title>
+<style>
+  /* === БАЗА === */
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select: none; }
+  html, body { width:100%; height:100%; overflow:hidden; font-family: 'Segoe UI', Arial, sans-serif; color:#fff; background: #0a0a0c; position: fixed; top: 0; left: 0; right: 0; bottom: 0; }
+
+  .game-viewport { width: 100%; height: 100%; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) scaleX(1); transform-origin: center center; transition: transform 0.1s linear; }
+  .bg-layer { position: fixed; inset: 0; background-image: url('https://i.postimg.cc/6qMVCp4h/2b7b9a656ed998ef87c68f7aaa8481b6.jpg'); background-size: cover; background-position: center; background-repeat: no-repeat; z-index: -2; display: none; }
+  .bg-overlay { position: fixed; inset: 0; background: rgba(10, 10, 12, 0.7); z-index: -1; display: none; }
+  body.game-started .bg-layer, body.game-started .bg-overlay { display: block; }
+
+  /* === СНЕГ === */
+  #snowContainer { position: fixed; inset: 0; z-index: 0; pointer-events: none; display: none; overflow: hidden; }
+  body.game-started #snowContainer { display: block; }
+  .snowflake { position: absolute; top: -20px; color: #fff; border-radius: 50%; background: radial-gradient(circle, #fff 0%, rgba(255,255,255,0) 70%); opacity: 0.8; animation: fall linear infinite; }
+  @keyframes fall { 0% { transform: translateY(-20px) translateX(0); } 100% { transform: translateY(105vh) translateX(30px); } }
+
+  /* FPS */
+  #fpsCounter { position: fixed; top: 10px; left: 10px; z-index: 500; background: rgba(0,0,0,0.6); padding: 5px 10px; border-radius: 8px; font-family: monospace; font-size: 14px; font-weight: bold; color: #00ff00; border: 1px solid #333; display: none; }
+
+  /* UI ИНТЕРФЕЙС */
+  .btn { display: inline-flex; align-items: center; justify-content: center; text-transform: uppercase; font-weight: 700; letter-spacing: 2px; color: #fff; background: #000; border: 1px solid #333; border-radius: 30px; cursor: pointer; user-select: none; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+  .btn:hover, .btn:active { background: #111; border-color: #ff4d4d; box-shadow: 0 0 20px rgba(255, 77, 77, 0.3); }
+  .btn:active { transform: scale(0.98); }
+  .input-field { width: 100%; padding: 15px 20px; background: rgba(17, 17, 17, 0.8); border: 1px solid #333; border-radius: 12px; color: #fff; font-size: 16px; outline: none; transition: border-color 0.3s; margin-bottom: 15px; backdrop-filter: blur(5px); }
+  .input-field:focus { border-color: #ff4d4d; }
+  .input-field::placeholder { color: #aaa; text-transform: none; letter-spacing: normal; }
+
+  /* ЭКРАНЫ МЕНЮ */
+  #splash { position:fixed; inset:0; z-index:100; display:flex; flex-direction:column; align-items:center; justify-content:center; background: #0a0a0c; transition: opacity .6s ease, transform .6s ease; }
+  #splash.hide { opacity:0; pointer-events:none; transform: scale(0.95); }
+  .welcome-card { background: rgba(20, 20, 25, 0.6); backdrop-filter: blur(15px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 20px; padding: clamp(30px, 6vw, 60px) clamp(20px, 5vw, 50px); text-align: center; box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6); animation: cardAppear 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+  @keyframes cardAppear { 100% { opacity: 1; transform: translateY(0); } }
+  .welcome-sub { font-size: clamp(14px, 2vw, 18px); color: #ccc; letter-spacing: 1px; margin-bottom: 10px; }
+  .welcome-title { font-size: clamp(32px, 8vw, 56px); font-weight: 900; letter-spacing: 3px; text-transform: uppercase; color:#fff; }
+  .btn-start { margin-top: 30px; width: 100%; max-width: 300px; padding: 18px 0; font-size: 18px; }
+
+  #registerPage { position:fixed; inset:0; z-index:90; display:none; flex-direction:column; align-items:center; justify-content:center; opacity: 0; transition: opacity 0.5s ease; }
+  #registerPage.show { display: flex; opacity: 1; }
+  .auth-card { background: rgba(21, 21, 21, 0.85); backdrop-filter: blur(10px); border: 1px solid #333; border-radius: 20px; padding: 30px; width: min(400px, 90vw); box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
+  .auth-title { text-align: center; font-size: 24px; margin-bottom: 20px; font-weight: 800; letter-spacing: 1px; }
+  .btn-create { width: 100%; padding: 16px 0; font-size: 16px; margin-top: 10px; }
+
+  /* ГЛАВНОЕ МЕНЮ */
+  #menu { position:fixed; inset:0; z-index:10; display:none; flex-direction:column; align-items:center; justify-content:center; gap: clamp(15px, 3vh, 25px); opacity: 0; transition: opacity 0.5s ease; }
+  #menu.show { display:flex; opacity: 1; }
+  
+  .menu-header { display: flex; flex-direction: column; align-items: center; margin-bottom: 20px; }
+  .menu-logo { font-size: clamp(36px, 7vw, 64px); font-weight: 900; letter-spacing: 5px; text-transform: uppercase; color:#fff; text-shadow: 0 0 20px #ff4d4d; line-height: 1; }
+  .menu-footer { font-size: 13px; color: rgba(255,255,255,0.5); letter-spacing: 2px; font-weight: 600; margin-top: 5px; }
+  
+  .btn-menu { width: min(340px, 85vw); padding: clamp(16px, 3vh, 22px) 0; font-size: clamp(18px, 2.8vw, 22px); }
+
+  #profilePage { position: fixed; inset: 0; z-index: 50; display: none; flex-direction: column; align-items: center; justify-content: center; padding: 15px; opacity: 0; transform: translateY(30px); transition: opacity 0.4s ease, transform 0.4s ease; }
+  #profilePage.show { display: flex; opacity: 1; transform: translateY(0); }
+  .profile-container { width: min(420px, 90vw); background: #111; border: 1px solid #333; border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); overflow: hidden; display: flex; flex-direction: column; }
+  .profile-header { height: 160px; background: linear-gradient(45deg, #1a1a1a, #0a0a0a); background-size: cover; background-position: center; position: relative; cursor: pointer; }
+  .profile-header::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 60px; background: linear-gradient(to top, #111 0%, transparent 100%); pointer-events: none; }
+  .profile-info { position: relative; z-index: 2; display: flex; align-items: center; gap: 15px; padding: 0 20px; transform: translateY(-25px); margin-bottom: -5px; }
+  .profile-avatar { width: 70px; height: 70px; border-radius: 50%; background: #000; border: 3px solid #ff4d4d; box-shadow: 0 5px 15px rgba(0,0,0,0.8); cursor: pointer; background-size: cover; background-position: center; transition: transform 0.2s ease; }
+  .profile-avatar:hover { transform: scale(1.05); }
+  .profile-name { font-size: 22px; font-weight: 800; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,0.8); cursor: pointer; }
+  .profile-stats { padding: 5px 20px 20px 20px; display: flex; gap: 15px; }
+  .stat-box { flex: 1; background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 12px; text-align: center; }
+  .stat-label { font-size: 12px; color: #888; text-transform: uppercase; margin-bottom: 5px; }
+  .stat-value { font-size: 24px; font-weight: 900; color: #fff; }
+  .btn-back { margin-top: 15px; width: min(200px, 60vw); padding: 12px 0; font-size: 15px; color: #aaa; border-color: #333; }
+  #bgUpload, #avatarUpload { display: none; }
+
+  /* МОДАЛКИ */
+  .modal-overlay { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); display: none; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.3s ease; }
+  .modal-overlay.show { display: flex; opacity: 1; }
+  
+  .modal-box { background: #111; border: 1px solid #333; border-radius: 20px; padding: 25px 30px; width: min(450px, 90vw); text-align: center; transform: scale(0.8); transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); max-height: 85vh; display: flex; flex-direction: column; }
+  .modal-overlay.show .modal-box { transform: scale(1); }
+  .modal-title { font-size: 20px; font-weight: 800; margin-bottom: 20px; letter-spacing: 1px; color: #fff; flex-shrink: 0; }
+  
+  .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px; flex-shrink: 0; }
+  .tab-btn { flex: 1; padding: 10px; background: #1a1a1a; border: 1px solid #333; border-radius: 10px; color: #888; cursor: pointer; font-weight: bold; transition: 0.2s; text-align: center; }
+  .tab-btn.active { background: #2a0505; border-color: #ff4d4d; color: #fff; }
+  
+  .tab-content-wrapper { overflow-y: auto; flex: 1; padding-right: 10px; padding-left: 5px; min-height: 0; touch-action: pan-y; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  .tab-content-wrapper::-webkit-scrollbar { width: 8px; } 
+  .tab-content-wrapper::-webkit-scrollbar-track { background: #1a1a1a; border-radius: 4px; }
+  .tab-content-wrapper::-webkit-scrollbar-thumb { background: #ff4d4d; border-radius: 4px; }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  .setting-row { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 15px; background: #1a1a1a; padding: 12px 15px; border-radius: 12px; border: 1px solid #333; }
+  .setting-label { font-size: 15px; font-weight: 600; color: #ddd; }
+  .range-row { display: flex; justify-content: space-between; align-items: center; width: 100%; margin-top: 5px; }
+  
+  input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background: #ff4d4d; cursor: pointer; margin-top: -7px; box-shadow: 0 0 10px rgba(255, 77, 77, 0.5); }
+  input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #333; border-radius: 2px; }
+
+  .switch { position: relative; display: inline-block; width: 46px; height: 26px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #333; transition: .4s; border-radius: 34px; }
+  .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+  input:checked + .slider { background-color: #ff4d4d; }
+  input:checked + .slider:before { transform: translateX(20px); }
+
+  .color-picker { display: flex; gap: 10px; width: 100%; justify-content: space-between; }
+  .color-option { width: 40px; height: 40px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: all 0.2s; }
+  .color-option.active { border-color: #fff; transform: scale(1.1); box-shadow: 0 0 15px rgba(255,255,255,0.5); }
+
+  /* ============ ИГРОВОЙ ПРОЦЕСС ============ */
+  #gameScreen {
+    position: fixed; inset: 0; z-index: 300; display: none;
+    background: url('https://i.postimg.cc/9MFY09zx/9537c0172c1dda7c6959fc16e441bb83.jpg') center/cover no-repeat;
+    overflow: hidden;
+  }
+  #gameScreen.show { display: block; }
+
+  #roundsContainer { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 15px; z-index: 30; pointer-events: none; }
+  .round-dot { width: 24px; height: 24px; border-radius: 50%; background: rgba(40, 40, 40, 0.8); border: 2px solid #555; box-shadow: 0 0 10px rgba(0,0,0,0.5); transition: all 0.3s ease; }
+  .round-dot.win { background: #00ff00; border-color: #00ff00; box-shadow: 0 0 15px #00ff00; }
+  .round-dot.lose { background: #ff3333; border-color: #ff3333; box-shadow: 0 0 15px #ff3333; }
+
+  #btnPause { position: absolute; top: 15px; left: 15px; z-index: 35; width: 50px; height: 50px; border-radius: 12px; background: rgba(0,0,0,0.6); border: 1px solid #555; color: #fff; font-size: 24px; font-weight: bold; display: flex; align-items: center; justify-content: center; cursor: pointer; backdrop-filter: blur(5px); transition: all 0.2s; }
+  #btnPause:hover { background: rgba(255, 77, 77, 0.3); border-color: #ff4d4d; }
+
+  #pauseOverlay { position: absolute; inset: 0; z-index: 38; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); display: none; flex-direction: column; align-items: center; justify-content: center; }
+  #pauseOverlay.show { display: flex; }
+  .pause-text { font-size: 64px; font-weight: 900; color: #fff; text-shadow: 0 0 20px #ff4d4d; letter-spacing: 5px; margin-bottom: 20px; animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+
+  #countdown { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 120px; font-weight: 900; color: #fff; text-shadow: 0 0 20px #ff4d4d, 0 0 40px #ff4d4d; z-index: 20; pointer-events: none; opacity: 0; transition: opacity 0.2s; }
+
+  .entity { position: absolute; pointer-events: none; }
+  .character { width: 80px; height: 140px; position: relative; transform-origin: bottom center; display: flex; justify-content: center; }
+  .character img { position: absolute; height: 100%; object-fit: contain; bottom: 0; }
+  .weapon { position: absolute; width: 120px; height: 80px; top: 40px; left: 20px; transform-origin: 20px 40px; pointer-events: none; transition: transform 0.05s linear; }
+  .weapon img { width: 100%; height: 100%; object-fit: contain; }
+
+  .bullet { position: absolute; width: 8px; height: 8px; border-radius: 50%; pointer-events: none; z-index: 5; }
+  .bullet.enemy { background: #ff4d4d; box-shadow: 0 0 10px #ff4d4d; }
+
+  .reload-circle { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 120px; height: 120px; border-radius: 50%; border: 4px solid rgba(255, 255, 255, 0.2); border-top-color: #ffeb3b; z-index: 4; pointer-events: none; display: none; animation: spin 1s linear infinite; }
+  @keyframes spin { 100% { transform: translate(-50%, -50%) rotate(360deg); } }
+
+  .health-bar-container { position: absolute; width: 100%; height: 8px; background: #333; border-radius: 4px; top: -15px; overflow: hidden; }
+  .health-bar { height: 100%; background: #00ff00; width: 100%; transition: width 0.1s; }
+  .health-bar.enemy { background: #ff4d4d; }
+
+  .joystick-zone { position: absolute; bottom: 20px; width: 140px; height: 140px; z-index: 50; touch-action: none; }
+  .joystick-zone.left { left: 20px; }
+  .joystick-zone.right { right: 20px; }
+  .joystick-base { position: absolute; width: 100%; height: 100%; border-radius: 50%; background: rgba(0, 0, 0, 0.4); border: 2px solid rgba(255, 255, 255, 0.3); display: flex; align-items: center; justify-content: center; transition: opacity 0.2s; }
+  .joystick-base.left { border-color: #4d4dff; box-shadow: 0 0 15px rgba(77, 77, 255, 0.4); }
+  .joystick-base.right { border-color: #ff4d4d; box-shadow: 0 0 15px rgba(255, 77, 77, 0.4); }
+  .joystick-stick { width: 50px; height: 50px; border-radius: 50%; background: rgba(255, 255, 255, 0.8); box-shadow: 0 0 10px rgba(0,0,0,0.5); position: absolute; pointer-events: none; }
+
+  #resultScreen { position: absolute; inset: 0; z-index: 400; background: rgba(0,0,0,0.85); display: none; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(5px); }
+  #resultScreen.show { display: flex; }
+  .result-title { font-size: 48px; font-weight: 900; margin-bottom: 20px; text-transform: uppercase; }
+  .result-title.win { color: #00ff00; text-shadow: 0 0 20px #00ff00; }
+  .result-title.lose { color: #ff4d4d; text-shadow: 0 0 20px #ff4d4d; }
+  .result-elo { font-size: 24px; font-weight: bold; margin-bottom: 30px; color: #ffeb3b; }
+</style>
+</head>
+<body>
+
+  <div id="snowContainer"></div>
+  <div id="fpsCounter">FPS: 0</div>
+  
+  <!-- ЕДИНСТВЕННЫЙ ФОНОВЫЙ ТРЕК -->
+  <audio id="mainMusicPlayer" src="https://files.catbox.moe/zpgkmd.m4a" loop preload="auto"></audio>
+  
+  <div class="bg-layer"></div>
+  <div class="bg-overlay"></div>
+
+  <div id="splash">
+    <div class="welcome-card">
+      <div class="welcome-sub">Приветствую, вы зашли в нашу игру</div>
+      <div class="welcome-title">Strike Elo</div>
+      <button class="btn btn-start" id="btnStart">Начать игру</button>
+    </div>
+  </div>
+
+  <div class="game-viewport" id="gameViewport">
+
+    <!-- МОДАЛКА НАСТРОЕК (БЕЗ ВКЛАДКИ МУЗЫКИ) -->
+    <div class="modal-overlay" id="modalSettings">
+      <div class="modal-box">
+        <div class="modal-title">Настройки</div>
+        
+        <div class="tabs">
+          <div class="tab-btn active" onclick="switchTab('tabGeneral', this)">Основные</div>
+          <div class="tab-btn" onclick="switchTab('tabControls', this)">Управление</div>
+        </div>
+
+        <div class="tab-content-wrapper">
+          <div id="tabGeneral" class="tab-content active">
+            <div class="setting-row">
+              <div class="setting-label">Цвет прицела</div>
+              <div class="color-picker">
+                <div class="color-option active" style="background:#ffeb3b;" data-color="#ffeb3b" onclick="setCrosshairColor(this)"></div>
+                <div class="color-option" style="background:#ff4d4d;" data-color="#ff4d4d" onclick="setCrosshairColor(this)"></div>
+                <div class="color-option" style="background:#00ff00;" data-color="#00ff00" onclick="setCrosshairColor(this)"></div>
+                <div class="color-option" style="background:#00ccff;" data-color="#00ccff" onclick="setCrosshairColor(this)"></div>
+                <div class="color-option" style="background:#ffffff;" data-color="#ffffff" onclick="setCrosshairColor(this)"></div>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label">Растяг (Stretch)</div>
+              <div class="range-row">
+                <input type="range" id="stretchSlider" min="100" max="160" value="100">
+                <span id="stretchVal" style="font-size: 14px; font-weight: bold; color: #ff4d4d; width: 45px; text-align: right;">100%</span>
+              </div>
+            </div>
+            <div class="setting-row" style="flex-direction: row; align-items: center; justify-content: space-between;">
+              <div class="setting-label">Показывать FPS</div>
+              <label class="switch">
+                <input type="checkbox" id="fpsToggle">
+                <span class="slider"></span>
+              </label>
+            </div>
+            <div style="height: 20px;"></div>
+          </div>
+
+          <div id="tabControls" class="tab-content">
+            <div class="setting-row">
+              <div class="setting-label" style="color: #4d4dff;">Размер (Ходьба)</div>
+              <div class="range-row">
+                <input type="range" id="sizeLeft" min="80" max="200" value="140">
+                <span id="sizeLeftVal" style="font-size: 14px; font-weight: bold; color: #4d4dff; width: 45px; text-align: right;">140px</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label" style="color: #4d4dff;">Прозрачность (Ходьба)</div>
+              <div class="range-row">
+                <input type="range" id="opacityLeft" min="20" max="100" value="100">
+                <span id="opacityLeftVal" style="font-size: 14px; font-weight: bold; color: #4d4dff; width: 45px; text-align: right;">100%</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label" style="color: #ff4d4d;">Размер (Стрельба)</div>
+              <div class="range-row">
+                <input type="range" id="sizeRight" min="80" max="200" value="140">
+                <span id="sizeRightVal" style="font-size: 14px; font-weight: bold; color: #ff4d4d; width: 45px; text-align: right;">140px</span>
+              </div>
+            </div>
+            <div class="setting-row">
+              <div class="setting-label" style="color: #ff4d4d;">Прозрачность (Стрельба)</div>
+              <div class="range-row">
+                <input type="range" id="opacityRight" min="20" max="100" value="100">
+                <span id="opacityRightVal" style="font-size: 14px; font-weight: bold; color: #ff4d4d; width: 45px; text-align: right;">100%</span>
+              </div>
+            </div>
+            <div style="height: 20px;"></div>
+          </div>
+        </div>
+
+        <div class="btn" style="width: 100%; padding: 12px 0; font-size: 15px; margin-top: 15px; flex-shrink: 0;" id="btnCloseSettings">Закрыть</div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="modalNickname">
+      <div class="modal-box" style="border-color: #ff4d4d; box-shadow: 0 0 30px rgba(255, 77, 77, 0.2);">
+        <div class="modal-title">Изменить ник</div>
+        <input type="text" id="newNickInput" class="input-field" placeholder="Новый никнейм">
+        <div id="nickError" style="color: #ff4d4d; font-size: 13px; margin-bottom: 10px; display: none;">Слишком короткий ник</div>
+        <div style="display: flex; gap: 10px;">
+          <div class="btn" style="flex: 1; padding: 12px 0; font-size: 14px; color: #aaa;" id="btnCancelNick">Отмена</div>
+          <div class="btn" style="flex: 1; padding: 12px 0; font-size: 14px; border-color: #ff4d4d; color: #ff4d4d;" id="btnSaveNick">Сохранить</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="registerPage">
+      <div class="auth-card">
+        <div class="auth-title">Создание аккаунта</div>
+        <input type="text" id="regNickname" class="input-field" placeholder="Введите ваш Никнейм">
+        <input type="password" id="regPassword" class="input-field" placeholder="Введите ваш Пароль">
+        <button class="btn btn-create" id="btnCreate">Создать</button>
+      </div>
+    </div>
+
+    <div id="menu">
+      <div class="menu-header">
+        <div class="menu-logo">STRIKE ELO</div>
+        <div class="menu-footer">by lopinovski</div>
+      </div>
+      <div class="btn btn-menu" id="btnPlay">Играть</div>
+      <div class="btn btn-menu" id="btnProfileMenu">Профиль</div>
+      <div class="btn btn-menu" id="btnSettings">Настройки</div>
+    </div>
+
+    <div id="profilePage">
+      <div class="profile-container">
+        <div class="profile-header" id="profileHeader"></div>
+        <div class="profile-info">
+          <div class="profile-avatar" id="profileAvatar"></div>
+          <div class="profile-name" id="profileName">Игрок</div>
+        </div>
+        <div class="profile-stats">
+          <div class="stat-box">
+            <div class="stat-label">Эло</div>
+            <div class="stat-value" id="valElo">0</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-label">Матчи</div>
+            <div class="stat-value" id="valMatches">0</div>
+          </div>
+        </div>
+      </div>
+      <div class="btn btn-back" id="btnBackProfile">Назад</div>
+      <input type="file" id="bgUpload" accept="image/*">
+      <input type="file" id="avatarUpload" accept="image/*">
+    </div>
+
+  </div> <!-- Конец game-viewport -->
+
+  <div id="gameScreen">
+    <div id="roundsContainer">
+      <div class="round-dot" id="dot1"></div>
+      <div class="round-dot" id="dot2"></div>
+      <div class="round-dot" id="dot3"></div>
+    </div>
+
+    <div id="btnPause">⏸</div>
+    <div id="pauseOverlay">
+      <div class="pause-text">ПАУЗА</div>
+      <div style="color: #aaa;">Нажмите на экран, чтобы продолжить</div>
+    </div>
+
+    <div id="countdown">3</div>
+    
+    <div class="entity" id="playerEntity">
+      <div class="health-bar-container"><div class="health-bar" id="playerHealthBar"></div></div>
+      <div class="character" id="playerChar">
+        <img src="https://i.postimg.cc/RhJfJLmP/4912-removebg-preview.png" alt="Player">
+        <div class="weapon" id="playerWeapon">
+          <img src="https://i.postimg.cc/rpyf03PQ/4915-removebg-preview.png" alt="Gun">
+        </div>
+      </div>
+      <div class="reload-circle" id="playerReload"></div>
+    </div>
+
+    <div class="entity" id="enemyEntity">
+      <div class="health-bar-container"><div class="health-bar enemy" id="enemyHealthBar"></div></div>
+      <div class="character" id="enemyChar" style="transform: scaleX(-1);">
+        <img src="https://i.postimg.cc/RhJfJLmP/4912-removebg-preview.png" alt="Enemy">
+        <div class="weapon" id="enemyWeapon">
+          <img src="https://i.postimg.cc/rpyf03PQ/4915-removebg-preview.png" alt="Gun">
+        </div>
+      </div>
+    </div>
+
+    <div class="joystick-zone left" id="zoneLeft">
+      <div class="joystick-base left" id="baseLeft">
+        <div class="joystick-stick" id="stickLeft"></div>
+      </div>
+    </div>
+    <div class="joystick-zone right" id="zoneRight">
+      <div class="joystick-base right" id="baseRight">
+        <div class="joystick-stick" id="stickRight"></div>
+      </div>
+    </div>
+
+    <div id="resultScreen">
+      <div class="result-title" id="resultTitle">ПОБЕДА</div>
+      <div class="result-elo" id="resultElo">+50 Elo</div>
+      <div class="btn" style="padding: 15px 40px; font-size: 18px;" id="btnExitGame">В меню</div>
+    </div>
+  </div>
+
+<script>
+  function createSnow() {
+    const container = document.getElementById('snowContainer');
+    if(!container) return;
+    const count = 50;
+    for(let i = 0; i < count; i++) {
+      const flake = document.createElement('div');
+      flake.className = 'snowflake';
+      const size = Math.random() * 6 + 2;
+      const left = Math.random() * 100;
+      const duration = Math.random() * 5 + 5;
+      const delay = Math.random() * 5;
+      flake.style.width = size + 'px';
+      flake.style.height = size + 'px';
+      flake.style.left = left + 'vw';
+      flake.style.animationDuration = duration + 's';
+      flake.style.animationDelay = delay + 's';
+      flake.style.opacity = Math.random() * 0.5 + 0.3;
+      container.appendChild(flake);
+    }
+  }
+
+  function switchTab(tabId, btn) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(tabId).classList.add('active');
+  }
+
+  function setCrosshairColor(el) {
+    document.querySelectorAll('.color-option').forEach(opt => opt.classList.remove('active'));
+    el.classList.add('active');
+    let color = el.getAttribute('data-color');
+    document.documentElement.style.setProperty('--crosshair-color', color);
+    localStorage.setItem('strikeEloCrosshair', color);
+  }
+
+  function applyCrosshairColor() {
+    const color = localStorage.getItem('strikeEloCrosshair') || '#ffeb3b';
+    document.documentElement.style.setProperty('--crosshair-color', color);
+    document.querySelectorAll('.color-option').forEach(opt => {
+      if(opt.getAttribute('data-color') === color) opt.classList.add('active');
+      else opt.classList.remove('active');
+    });
+  }
+
+  window.addEventListener('load', () => {
+    createSnow();
+    applyCrosshairColor();
+
+    const splash = document.getElementById('splash');
+    const registerPage = document.getElementById('registerPage');
+    const menu = document.getElementById('menu');
+    const profilePage = document.getElementById('profilePage');
+    const gameScreen = document.getElementById('gameScreen');
+    const mainMusicPlayer = document.getElementById('mainMusicPlayer');
+    
+    let userProfile = null;
+    try { userProfile = JSON.parse(localStorage.getItem('strikeEloUser')); } catch(e) {}
+
+    function goFullscreenAndLandscape() {
+      const el = document.documentElement;
+      if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+      try {
+        if (screen.orientation && screen.orientation.lock) {
+          screen.orientation.lock('landscape').catch(() => {});
+        }
+      } catch (e) {}
+    }
+
+    // === ГЛАВНАЯ КНОПКА СТАРТА ===
+    document.getElementById('btnStart').addEventListener('click', () => {
+      // Запуск музыки
+      mainMusicPlayer.volume = 0.4;
+      mainMusicPlayer.play().catch(e => console.log("Ошибка музыки:", e));
+
+      // Фуллскрин
+      goFullscreenAndLandscape();
+      
+      // Переход в меню
+      document.body.classList.add('game-started');
+      splash.classList.add('hide');
+      setTimeout(() => {
+        splash.style.display = 'none';
+        if (userProfile) menu.classList.add('show');
+        else registerPage.classList.add('show');
+      }, 600);
+    });
+
+    document.getElementById('btnCreate').addEventListener('click', () => {
+      const nick = document.getElementById('regNickname').value.trim();
+      const pass = document.getElementById('regPassword').value.trim();
+      if (nick.length < 2) { document.getElementById('regNickname').style.borderColor = '#ff4d4d'; return; }
+      if (pass.length < 3) { document.getElementById('regPassword').style.borderColor = '#ff4d4d'; return; }
+      userProfile = { nickname: nick, password: pass, elo: 0, matches: 0, bgImage: '', avatar: '' };
+      localStorage.setItem('strikeEloUser', JSON.stringify(userProfile));
+      updateProfileUI();
+      registerPage.classList.remove('show');
+      setTimeout(() => { registerPage.style.display = 'none'; menu.classList.add('show'); }, 400);
+    });
+
+    function updateProfileUI() {
+      if (!userProfile) return;
+      document.getElementById('profileName').textContent = userProfile.nickname || 'Игрок';
+      document.getElementById('valElo').textContent = userProfile.elo || 0;
+      document.getElementById('valMatches').textContent = userProfile.matches || 0;
+      if (userProfile.bgImage) document.getElementById('profileHeader').style.backgroundImage = `url(${userProfile.bgImage})`;
+      if (userProfile.avatar) document.getElementById('profileAvatar').style.backgroundImage = `url(${userProfile.avatar})`;
+    }
+    if (userProfile) updateProfileUI();
+
+    document.getElementById('btnProfileMenu').addEventListener('click', () => {
+      menu.classList.remove('show');
+      setTimeout(() => { menu.style.display = 'none'; profilePage.style.display = 'flex'; setTimeout(() => profilePage.classList.add('show'), 20); }, 300);
+    });
+    document.getElementById('btnBackProfile').addEventListener('click', () => {
+      profilePage.classList.remove('show');
+      setTimeout(() => { profilePage.style.display = 'none'; menu.style.display = 'flex'; setTimeout(() => menu.classList.add('show'), 20); }, 400);
+    });
+
+    function openModal(id) { const m = document.getElementById(id); m.style.display = 'flex'; setTimeout(() => m.classList.add('show'), 10); }
+    function closeModal(id) { const m = document.getElementById(id); m.classList.remove('show'); setTimeout(() => m.style.display = 'none', 300); }
+    
+    document.getElementById('profileName').addEventListener('click', () => {
+      if (!userProfile) return;
+      document.getElementById('newNickInput').value = userProfile.nickname;
+      document.getElementById('nickError').style.display = 'none';
+      openModal('modalNickname');
+    });
+    document.getElementById('btnSaveNick').addEventListener('click', () => {
+      const newNick = document.getElementById('newNickInput').value.trim();
+      if (newNick.length < 2) { document.getElementById('nickError').style.display = 'block'; return; }
+      userProfile.nickname = newNick; 
+      localStorage.setItem('strikeEloUser', JSON.stringify(userProfile)); 
+      updateProfileUI(); closeModal('modalNickname');
+    });
+    document.getElementById('btnCancelNick').addEventListener('click', () => closeModal('modalNickname'));
+
+    document.getElementById('profileHeader').addEventListener('click', () => document.getElementById('bgUpload').click());
+    document.getElementById('bgUpload').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file && userProfile) { const r = new FileReader(); r.onload = (ev) => { document.getElementById('profileHeader').style.backgroundImage = `url(${ev.target.result})`; userProfile.bgImage = ev.target.result; localStorage.setItem('strikeEloUser', JSON.stringify(userProfile)); }; r.readAsDataURL(file); }
+    });
+    document.getElementById('profileAvatar').addEventListener('click', () => document.getElementById('avatarUpload').click());
+    document.getElementById('avatarUpload').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file && userProfile) { const r = new FileReader(); r.onload = (ev) => { document.getElementById('profileAvatar').style.backgroundImage = `url(${ev.target.result})`; userProfile.avatar = ev.target.result; localStorage.setItem('strikeEloUser', JSON.stringify(userProfile)); }; r.readAsDataURL(file); }
+    });
+
+    document.getElementById('btnSettings').addEventListener('click', () => openModal('modalSettings'));
+    document.getElementById('btnCloseSettings').addEventListener('click', () => closeModal('modalSettings'));
+
+    let appSettings = JSON.parse(localStorage.getItem('strikeEloSettings')) || { stretch: 100, showFPS: false, joyLeftSize: 140, joyLeftOpacity: 100, joyRightSize: 140, joyRightOpacity: 100 };
+    function saveSettings() { localStorage.setItem('strikeEloSettings', JSON.stringify(appSettings)); }
+    
+    document.getElementById('stretchSlider').addEventListener('input', (e) => {
+      document.getElementById('gameViewport').style.transform = `translate(-50%, -50%) scaleX(${e.target.value / 100})`;
+      document.getElementById('stretchVal').textContent = e.target.value + '%';
+      appSettings.stretch = parseInt(e.target.value); saveSettings();
+    });
+    document.getElementById('fpsToggle').addEventListener('change', (e) => {
+      document.getElementById('fpsCounter').style.display = e.target.checked ? 'block' : 'none';
+      appSettings.showFPS = e.target.checked; saveSettings();
+    });
+
+    function updateJoysticks() {
+      const sL = document.getElementById('sizeLeft').value;
+      const oL = document.getElementById('opacityLeft').value;
+      const sR = document.getElementById('sizeRight').value;
+      const oR = document.getElementById('opacityRight').value;
+      document.getElementById('sizeLeftVal').textContent = sL + 'px';
+      document.getElementById('opacityLeftVal').textContent = oL + '%';
+      document.getElementById('sizeRightVal').textContent = sR + 'px';
+      document.getElementById('opacityRightVal').textContent = oR + '%';
+      document.getElementById('zoneLeft').style.width = sL + 'px'; document.getElementById('zoneLeft').style.height = sL + 'px'; document.getElementById('zoneLeft').style.opacity = oL / 100;
+      document.getElementById('zoneRight').style.width = sR + 'px'; document.getElementById('zoneRight').style.height = sR + 'px'; document.getElementById('zoneRight').style.opacity = oR / 100;
+      appSettings.joyLeftSize = parseInt(sL); appSettings.joyLeftOpacity = parseInt(oL);
+      appSettings.joyRightSize = parseInt(sR); appSettings.joyRightOpacity = parseInt(oR);
+      saveSettings();
+    }
+
+    document.getElementById('sizeLeft').addEventListener('input', updateJoysticks);
+    document.getElementById('opacityLeft').addEventListener('input', updateJoysticks);
+    document.getElementById('sizeRight').addEventListener('input', updateJoysticks);
+    document.getElementById('opacityRight').addEventListener('input', updateJoysticks);
+
+    document.getElementById('stretchSlider').value = appSettings.stretch;
+    document.getElementById('stretchVal').textContent = appSettings.stretch + '%';
+    document.getElementById('gameViewport').style.transform = `translate(-50%, -50%) scaleX(${appSettings.stretch / 100})`;
+    document.getElementById('fpsToggle').checked = appSettings.showFPS;
+    if (appSettings.showFPS) document.getElementById('fpsCounter').style.display = 'block';
+    document.getElementById('sizeLeft').value = appSettings.joyLeftSize;
+    document.getElementById('opacityLeft').value = appSettings.joyLeftOpacity;
+    document.getElementById('sizeRight').value = appSettings.joyRightSize;
+    document.getElementById('opacityRight').value = appSettings.joyRightOpacity;
+    updateJoysticks();
+
+    let lastFrameTime = performance.now(); let frames = 0;
+    function updateFPS() {
+      const now = performance.now(); frames++;
+      if (now >= lastFrameTime + 1000) {
+        document.getElementById('fpsCounter').textContent = 'FPS: ' + Math.round((frames * 1000) / (now - lastFrameTime));
+        frames = 0; lastFrameTime = now;
+      }
+      requestAnimationFrame(updateFPS);
+    }
+    requestAnimationFrame(updateFPS);
+
+    let isGameActive = false;
+    let isPaused = false;
+    let gameLoopId = null;
+    
+    let pX, pY, pAngle = 0, pHP = 100, pAmmo = 6, pReloading = false;
+    const pSpeed = 3.5, pMaxHP = 100, pMaxAmmo = 6;
+    let eX, eY, eAngle = 180, eHP = 100, eAmmo = 6, eReloading = false;
+    const eSpeed = 2, eMaxHP = 100, eMaxAmmo = 6;
+    let bullets = [];
+    let joyLeftActive = false, joyLeftId = null, joyLeftX = 0, joyLeftY = 0;
+    let joyRightActive = false, joyRightId = null, joyRightX = 0, joyRightY = 0;
+    const charW = 80, charH = 140;
+
+    const pEnt = document.getElementById('playerEntity');
+    const eEnt = document.getElementById('enemyEntity');
+    const pBar = document.getElementById('playerHealthBar');
+    const eBar = document.getElementById('enemyHealthBar');
+    const pReload = document.getElementById('playerReload');
+    const pChar = document.getElementById('playerChar');
+    const pWeapon = document.getElementById('playerWeapon');
+    const eChar = document.getElementById('enemyChar');
+    const eWeapon = document.getElementById('enemyWeapon');
+    const countdownEl = document.getElementById('countdown');
+    const resultScreen = document.getElementById('resultScreen');
+    const resultTitle = document.getElementById('resultTitle');
+    const resultElo = document.getElementById('resultElo');
+    const pauseOverlay = document.getElementById('pauseOverlay');
+
+    document.getElementById('btnPause').addEventListener('click', () => {
+      if (!isGameActive) return;
+      isPaused = !isPaused;
+      pauseOverlay.classList.toggle('show', isPaused);
+      if (!isPaused) gameLoop();
+    });
+    pauseOverlay.addEventListener('click', () => {
+      isPaused = false;
+      pauseOverlay.classList.remove('show');
+      gameLoop();
+    });
+
+    document.getElementById('btnPlay').addEventListener('click', () => {
+      menu.classList.remove('show');
+      setTimeout(() => { menu.style.display = 'none'; startGame(); }, 300);
+    });
+    document.getElementById('btnExitGame').addEventListener('click', () => {
+      gameScreen.classList.remove('show');
+      resultScreen.classList.remove('show');
+      menu.style.display = 'flex';
+      setTimeout(() => menu.classList.add('show'), 20);
+    });
+
+    let currentRound = 1;
+    let playerWins = 0;
+    let enemyWins = 0;
+
+    function startGame() {
+      gameScreen.classList.add('show');
+      resultScreen.classList.remove('show');
+      isGameActive = false;
+      isPaused = false;
+      pauseOverlay.classList.remove('show');
+      currentRound = 1;
+      playerWins = 0;
+      enemyWins = 0;
+      
+      document.querySelectorAll('.round-dot').forEach(dot => {
+        dot.className = 'round-dot';
+      });
+
+      startRound();
+    }
+
+    function startRound() {
+      let sw = window.innerWidth, sh = window.innerHeight;
+      pX = sw * 0.2; pY = sh * 0.5 - charH/2; pAngle = 0; pHP = pMaxHP; pAmmo = pMaxAmmo; pReloading = false;
+      eX = sw * 0.8 - charW; eY = sh * 0.5 - charH/2; eAngle = 180; eHP = eMaxHP; eAmmo = eMaxAmmo; eReloading = false;
+      bullets = [];
+      updateEntityPositions();
+      pBar.style.width = '100%'; eBar.style.width = '100%';
+      pReload.style.display = 'none';
+
+      let count = 3;
+      countdownEl.textContent = count;
+      countdownEl.style.opacity = '1';
+      
+      let cdInterval = setInterval(() => {
+        count--;
+        if (count > 0) {
+          countdownEl.textContent = count;
+        } else if (count === 0) {
+          countdownEl.textContent = "БОЙ!";
+        } else {
+          clearInterval(cdInterval);
+          countdownEl.style.opacity = '0';
+          isGameActive = true;
+          gameLoop();
+        }
+      }, 1000);
+    }
+
+    function updateEntityPositions() {
+      pEnt.style.left = pX + 'px'; pEnt.style.top = pY + 'px';
+      pChar.style.transform = `scaleX(${Math.cos(pAngle) < 0 ? -1 : 1})`;
+      eEnt.style.left = eX + 'px'; eEnt.style.top = eY + 'px';
+      eChar.style.transform = `scaleX(${Math.cos(eAngle) < 0 ? 1 : -1})`;
+    }
+
+    document.getElementById('zoneLeft').addEventListener('touchstart', (e) => { e.preventDefault(); joyLeftActive = true; joyLeftId = e.changedTouches[0].identifier; moveLeftJoystick(e.changedTouches[0]); }, {passive: false});
+    document.getElementById('zoneRight').addEventListener('touchstart', (e) => { e.preventDefault(); joyRightActive = true; joyRightId = e.changedTouches[0].identifier; moveRightJoystick(e.changedTouches[0]); }, {passive: false});
+    document.addEventListener('touchmove', (e) => {
+      e.preventDefault();
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        if (touch.identifier === joyLeftId) moveLeftJoystick(touch);
+        if (touch.identifier === joyRightId) moveRightJoystick(touch);
+      }
+    }, {passive: false});
+    document.addEventListener('touchend', (e) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const touch = e.changedTouches[i];
+        if (touch.identifier === joyLeftId) { joyLeftActive = false; joyLeftId = null; joyLeftX = 0; joyLeftY = 0; document.getElementById('stickLeft').style.transform = `translate(0px, 0px)`; }
+        if (touch.identifier === joyRightId) { 
+          joyRightActive = false; joyRightId = null; 
+          if (Math.abs(joyRightX) > 0.2 || Math.abs(joyRightY) > 0.2) shootPlayer();
+          joyRightX = 0; joyRightY = 0; 
+          document.getElementById('stickRight').style.transform = `translate(0px, 0px)`; 
+        }
+      }
+    });
+
+    function moveLeftJoystick(touch) {
+      const zone = document.getElementById('zoneLeft');
+      const stick = document.getElementById('stickLeft');
+      const rect = zone.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      let deltaX = touch.clientX - centerX;
+      let deltaY = touch.clientY - centerY;
+      const maxDist = rect.width / 2 - 25;
+      const dist = Math.sqrt(deltaX*deltaX + deltaY*deltaY);
+      if (dist > maxDist) { deltaX = (deltaX / dist) * maxDist; deltaY = (deltaY / dist) * maxDist; }
+      stick.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+      joyLeftX = deltaX / maxDist; joyLeftY = deltaY / maxDist; 
+    }
+
+    function moveRightJoystick(touch) {
+      const zone = document.getElementById('zoneRight');
+      const stick = document.getElementById('stickRight');
+      const rect = zone.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      let deltaX = touch.clientX - centerX;
+      let deltaY = touch.clientY - centerY;
+      const maxDist = rect.width / 2 - 25;
+      const dist = Math.sqrt(deltaX*deltaX + deltaY*deltaY);
+      if (dist > maxDist) { deltaX = (deltaX / dist) * maxDist; deltaY = (deltaY / dist) * maxDist; }
+      stick.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+      let normX = deltaX / maxDist;
+      let normY = deltaY / maxDist;
+      joyRightX = normX; joyRightY = normY;
+      let angle = Math.atan2(normY, normX);
+      pAngle = angle;
+      pWeapon.style.transform = `rotate(${angle}rad)`;
+      pChar.style.transform = `scaleX(${Math.cos(angle) < 0 ? -1 : 1})`;
+    }
+
+    function shootPlayer() {
+      if (pReloading || pAmmo <= 0) return;
+      pAmmo--;
+      playShotSound();
+      const bulletEl = document.createElement('div');
+      bulletEl.className = 'bullet';
+      bulletEl.style.background = getComputedStyle(document.documentElement).getPropertyValue('--crosshair-color').trim() || '#ffeb3b';
+      bulletEl.style.boxShadow = `0 0 10px ${getComputedStyle(document.documentElement).getPropertyValue('--crosshair-color').trim() || '#ffeb3b'}`;
+      gameScreen.appendChild(bulletEl);
+      bullets.push({
+        el: bulletEl, x: pX + charW/2 + Math.cos(pAngle) * 50, y: pY + charH/2 + Math.sin(pAngle) * 30,
+        vx: Math.cos(pAngle) * 15, vy: Math.sin(pAngle) * 15, isEnemy: false
+      });
+      if (pAmmo === 0) { pReloading = true; pReload.style.display = 'block'; setTimeout(() => { pAmmo = pMaxAmmo; pReloading = false; pReload.style.display = 'none'; }, 2000); }
+    }
+
+    function shootEnemy() {
+      if (eReloading || eAmmo <= 0) return;
+      eAmmo--;
+      const dx = pX - eX, dy = pY - eY;
+      const angle = Math.atan2(dy, dx);
+      eAngle = angle;
+      eWeapon.style.transform = `rotate(${angle}rad)`;
+      eChar.style.transform = `scaleX(${Math.cos(angle) < 0 ? 1 : -1})`;
+      const bulletEl = document.createElement('div');
+      bulletEl.className = 'bullet enemy';
+      gameScreen.appendChild(bulletEl);
+      bullets.push({
+        el: bulletEl, x: eX + charW/2 + Math.cos(angle) * 50, y: eY + charH/2 + Math.sin(angle) * 30,
+        vx: Math.cos(angle) * 12, vy: Math.sin(angle) * 12, isEnemy: true
+      });
+      if (eAmmo === 0) { eReloading = true; setTimeout(() => { eAmmo = eMaxAmmo; eReloading = false; }, 2000); }
+    }
+
+    function gameLoop() {
+      if (!isGameActive || isPaused) return;
+
+      let sw = window.innerWidth, sh = window.innerHeight;
+
+      pX += joyLeftX * pSpeed; pY += joyLeftY * pSpeed;
+      if (pX < 0) pX = 0; if (pX > sw - charW) pX = sw - charW;
+      if (pY < 0) pY = 0; if (pY > sh - charH) pY = sh - charH;
+
+      const dx = pX - eX, dy = pY - eY, dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist > 250) { eX += (dx / dist) * eSpeed; eY += (dy / dist) * eSpeed; } 
+      else if (dist < 150) { eX -= (dx / dist) * eSpeed; eY -= (dy / dist) * eSpeed; } 
+      else { eY += Math.cos(Date.now() / 300) * 1.5; }
+      
+      if (eX < 0) eX = 0; if (eX > sw - charW) eX = sw - charW;
+      if (eY < 0) eY = 0; if (eY > sh - charH) eY = sh - charH;
+
+      if (Math.random() < 0.02 && dist < 400) shootEnemy();
+
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        b.x += b.vx; b.y += b.vy;
+        b.el.style.left = b.x + 'px'; b.el.style.top = b.y + 'px';
+
+        let hit = false;
+        if (b.isEnemy) {
+          if (b.x > pX && b.x < pX + charW && b.y > pY && b.y < pY + charH) { hit = true; pHP -= 15; pBar.style.width = Math.max(0, pHP) + '%'; if (pHP <= 0) endRound(false); }
+        } else {
+          if (b.x > eX && b.x < eX + charW && b.y > eY && b.y < eY + charH) { hit = true; eHP -= 25; playHitSound(); eBar.style.width = Math.max(0, eHP) + '%'; if (eHP <= 0) endRound(true); }
+        }
+        if (hit || b.x < 0 || b.x > sw || b.y < 0 || b.y > sh) { b.el.remove(); bullets.splice(i, 1); }
+      }
+
+      updateEntityPositions();
+      gameLoopId = requestAnimationFrame(gameLoop);
+    }
+
+    function endRound(isWin) {
+      isGameActive = false;
+      if (gameLoopId) cancelAnimationFrame(gameLoopId);
+      bullets.forEach(b => b.el.remove()); bullets = [];
+      eHP = 0; eBar.style.width = '0%';
+
+      const dot = document.getElementById('dot' + currentRound);
+      if (dot) {
+        if (isWin) { dot.classList.add('win'); playerWins++; }
+        else { dot.classList.add('lose'); enemyWins++; }
+      }
+
+      currentRound++;
+
+      setTimeout(() => {
+        if (currentRound > 3) {
+          resultScreen.classList.add('show');
+          if (playerWins > enemyWins) {
+            resultTitle.textContent = 'ПОБЕДА'; resultTitle.className = 'result-title win'; resultElo.textContent = '+50 Elo';
+            if(userProfile) { userProfile.elo = (userProfile.elo || 0) + 50; userProfile.matches = (userProfile.matches || 0) + 1; }
+          } else {
+            resultTitle.textContent = 'ПОРАЖЕНИЕ'; resultTitle.className = 'result-title lose'; resultElo.textContent = '-30 Elo';
+            if(userProfile) { userProfile.elo = Math.max(0, (userProfile.elo || 0) - 30); userProfile.matches = (userProfile.matches || 0) + 1; }
+          }
+          if (userProfile) { localStorage.setItem('strikeEloUser', JSON.stringify(userProfile)); updateProfileUI(); }
+        } else {
+          startRound();
+        }
+      }, 1000);
+    }
+
+    function playShotSound() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator(); const gain = ctx.createGain();
+        osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+        osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + 0.1);
+      } catch(e) {}
+    }
+
+    function playHitSound() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator(); const gain = ctx.createGain();
+        osc.type = 'square'; osc.frequency.setValueAtTime(1500, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1000, ctx.currentTime + 0.1);
+        gain.gain.setValueAtTime(0.8, ctx.currentTime); gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+        osc.connect(gain); gain.connect(ctx.destination); osc.start(); osc.stop(ctx.currentTime + 0.15);
+      } catch (e) {}
+    }
+
+  });
+</script>
+</body>
+</html>
